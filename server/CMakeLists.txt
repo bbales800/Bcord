@@ -1,4 +1,6 @@
 # server/CMakeLists.txt
+# server/CMakeLists.txt (near the top)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 find_package(Boost REQUIRED COMPONENTS system thread)
 find_package(nlohmann_json 3.2.0 REQUIRED)
 find_package(redis++ CONFIG QUIET)   # ok if not found; we fall back

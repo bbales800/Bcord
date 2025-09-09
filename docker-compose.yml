@@ -1,37 +1,63 @@
 version: "3.9"
+
+networks:
+  net:
+
+volumes:
+  bcord-pg:
+  caddy-data:
+  caddy-config:
+
 services:
-  bcord:
-    build:
-      context: .
-      # If your Dockerfile is at repo ROOT, use "./Dockerfile" instead:
-      dockerfile: ./server/Dockerfile
-    container_name: bcord
-    environment:
-      - BIND_ADDR=0.0.0.0
-      - PORT=9000
-      - REDIS_URL=redis://redis:6379
-      - PGHOST=postgres
-      - PGDATABASE=bcord
-      - PGUSER=bcord
-      - PGPASSWORD=change_me
-      - PGPORT=5432
-    expose:
-      - "9000"
-    depends_on: [redis, postgres]
-
-  redis:
-    image: redis:7
-    container_name: bcord-redis
-
   postgres:
     image: postgres:16
     container_name: bcord-postgres
     environment:
-      - POSTGRES_DB=bcord
-      - POSTGRES_USER=bcord
-      - POSTGRES_PASSWORD=change_me
+      POSTGRES_DB: bcord
+      POSTGRES_USER: bcord
+      POSTGRES_PASSWORD: change_me
     volumes:
       - bcord-pg:/var/lib/postgresql/data
+    networks: [ net ]
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U bcord -d bcord || exit 1" ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7
+    container_name: bcord-redis
+    networks: [ net ]
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli ping | grep -q PONG" ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  bcord:
+    build:
+      context: .
+      # If your Dockerfile is at repo ROOT, change to: dockerfile: ./Dockerfile
+      dockerfile: ./server/Dockerfile
+    container_name: bcord
+    environment:
+      BIND_ADDR: 0.0.0.0
+      PORT: "9000"
+      REDIS_URL: redis://redis:6379
+      PGHOST: postgres
+      PGDATABASE: bcord
+      PGUSER: bcord
+      PGPASSWORD: change_me
+      PGPORT: "5432"
+    expose:
+      - "9000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [ net ]
 
   caddy:
     image: caddy:2
@@ -40,14 +66,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # Mount a DIRECTORY that contains Caddyfile → /etc/caddy
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/caddy:/etc/caddy
+      - /srv/tester:/srv/tester:ro
       - caddy-data:/data
       - caddy-config:/config
-      - ./tester:/srv/tester:ro
-    depends_on: [bcord]
-
-volumes:
-  bcord-pg:
-  caddy-data:
-  caddy-config:
+    depends_on:
+      - bcord
+    networks: [ net ]

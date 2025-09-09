@@ -13,8 +13,9 @@ RUN apt-get update && \
       libpq-dev \
       libboost-dev libboost-system-dev libboost-thread-dev \
       libhiredis-dev \
-      nlohmann-json3-dev && \
-    rm -rf /var/lib/apt/lists/*
+      nlohmann-json3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 
 # ---- Build redis-plus-plus (headers+libs into /usr/local) ------------------
 # Pin to a known release to keep cache stable; adjust tag if needed.
