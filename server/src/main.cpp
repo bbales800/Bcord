@@ -54,6 +54,8 @@
 
 #include "lan_mac.hpp"
 #include <argon2.h>
+// put this above the pqxx include:
+#define PQXX_HIDE_SOURCE_LOCATION
 #include <pqxx/pqxx>
 #include <sw/redis++/redis++.h>
 
@@ -234,13 +236,11 @@ static void pg_init_channel_schema() {
       "FROM channels c WHERE c.id=$1");
 }
 
-// ----- messages schema + prepares (by channel_id)
-// ------------------------------------
+// ----- messages schema + prepares (by channel_id) ------------------------------------
 static void pg_init_msg_schema() {
-  if (!g_pg.enabled)
-    return;
-  pqxx::work tx{*g_pg.conn};
-  tx.exec(R"SQL(
+    if (!g_pg.enabled) return;
+    pqxx::work tx{*g_pg.conn};
+    tx.exec(R"SQL(
         CREATE TABLE IF NOT EXISTS messages(
           id          BIGSERIAL PRIMARY KEY,
           guild_id    BIGINT,
@@ -252,30 +252,24 @@ static void pg_init_msg_schema() {
         CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON messages(channel_id, id DESC);
         CREATE INDEX IF NOT EXISTS idx_messages_guild_chan ON messages(guild_id, channel_id, id DESC);
     )SQL");
-  tx.commit();
+    tx.commit();
 
-  // Insert by ids
-  g_pg.conn->prepare(
-      "insert_msg_id",
-      "INSERT INTO messages(guild_id,channel_id,username,body,ts) "
-      "VALUES($1,$2,$3,$4,$5) RETURNING id");
+    // Insert by ids
+    g_pg.conn->prepare("insert_msg_id",
+        "INSERT INTO messages(guild_id,channel_id,username,body,ts) VALUES($1,$2,$3,$4,$5) RETURNING id");
 
-  // History pages
-  g_pg.conn->prepare(
-      "hist_latest",
-      "SELECT id AS message_id, username AS user, body AS text, ts "
-      "FROM messages WHERE channel_id=$1 ORDER BY id DESC LIMIT $2");
+    // History pages
+    g_pg.conn->prepare("hist_latest",
+        "SELECT id AS message_id, username AS user, body AS text, ts "
+        "FROM messages WHERE channel_id=$1 ORDER BY id DESC LIMIT $2");
 
-  g_pg.conn->prepare(
-      "hist_before",
-      "SELECT id AS message_id, username AS user, body AS text, ts "
-      "FROM messages WHERE channel_id=$1 AND id < $2 ORDER BY id DESC LIMIT "
-      "$3");
+    g_pg.conn->prepare("hist_before",
+        "SELECT id AS message_id, username AS user, body AS text, ts "
+        "FROM messages WHERE channel_id=$1 AND id < $2 ORDER BY id DESC LIMIT $3");
 
-  g_pg.conn->prepare(
-      "hist_since",
-      "SELECT id AS message_id, username AS user, body AS text, ts "
-      "FROM messages WHERE channel_id=$1 AND id > $2 ORDER BY id ASC LIMIT $3");
+    g_pg.conn->prepare("hist_since",
+        "SELECT id AS message_id, username AS user, body AS text, ts "
+        "FROM messages WHERE channel_id=$1 AND id > $2 ORDER BY id ASC LIMIT $3");
 }
 
 // ===== PG HELPERS
@@ -524,51 +518,43 @@ static std::vector<long> redis_room_members(long chan_id) {
   return out;
 }
 
-// ===== HISTORY TYPES & HELPERS
-// =======================================================
-struct RowMsg {
-  long long message_id;
-  std::string user;
-  std::string text;
-  long long ts;
-};
+// ===== HISTORY TYPES & HELPERS =======================================================
+struct RowMsg { long long message_id; std::string user; std::string text; long long ts; };
 
 static std::vector<RowMsg> pg_hist_latest(long cid, int limit) {
-  std::vector<RowMsg> out;
-  pqxx::work tx{*g_pg.conn};
-  auto r = tx.exec_prepared("hist_latest", cid,
-                            std::max(1, std::min(limit, HISTORY_PAGE_MAX)));
-  out.reserve(r.size());
-  for (auto const &row : r)
-    out.push_back({row["message_id"].as<long long>(), row["user"].c_str(),
-                   row["text"].c_str(), row["ts"].as<long long>()});
-  return out;
+    std::vector<RowMsg> out; pqxx::work tx{*g_pg.conn};
+    auto r = tx.exec_prepared("hist_latest", cid, std::max(1,std::min(limit, HISTORY_PAGE_MAX)));
+    out.reserve(r.size());
+    for (auto const& row : r)
+        out.push_back({ row["message_id"].as<long long>(),
+                        row["user"].c_str(),
+                        row["text"].c_str(),
+                        row["ts"].as<long long>() });
+    return out;
 }
 
-static std::vector<RowMsg> pg_hist_before(long cid, long long before_id,
-                                          int limit) {
-  std::vector<RowMsg> out;
-  pqxx::work tx{*g_pg.conn};
-  auto r = tx.exec_prepared("hist_before", cid, before_id,
-                            std::max(1, std::min(limit, HISTORY_PAGE_MAX)));
-  out.reserve(r.size());
-  for (auto const &row : r)
-    out.push_back({row["message_id"].as<long long>(), row["user"].c_str(),
-                   row["text"].c_str(), row["ts"].as<long long>()});
-  return out;
+static std::vector<RowMsg> pg_hist_before(long cid, long long before_id, int limit) {
+    std::vector<RowMsg> out; pqxx::work tx{*g_pg.conn};
+    auto r = tx.exec_prepared("hist_before", cid, before_id, std::max(1,std::min(limit, HISTORY_PAGE_MAX)));
+    out.reserve(r.size());
+    for (auto const& row : r)
+        out.push_back({ row["message_id"].as<long long>(),
+                        row["user"].c_str(),
+                        row["text"].c_str(),
+                        row["ts"].as<long long>() });
+    return out;
 }
 
-static std::vector<RowMsg> pg_hist_since(long cid, long long after_id,
-                                         int limit) {
-  std::vector<RowMsg> out;
-  pqxx::work tx{*g_pg.conn};
-  auto r = tx.exec_prepared("hist_since", cid, after_id,
-                            std::max(1, std::min(limit, HISTORY_PAGE_MAX)));
-  out.reserve(r.size());
-  for (auto const &row : r)
-    out.push_back({row["message_id"].as<long long>(), row["user"].c_str(),
-                   row["text"].c_str(), row["ts"].as<long long>()});
-  return out;
+static std::vector<RowMsg> pg_hist_since(long cid, long long after_id, int limit) {
+    std::vector<RowMsg> out; pqxx::work tx{*g_pg.conn};
+    auto r = tx.exec_prepared("hist_since", cid, after_id, std::max(1,std::min(limit, HISTORY_PAGE_MAX)));
+    out.reserve(r.size());
+    for (auto const& row : r)
+        out.push_back({ row["message_id"].as<long long>(),
+                        row["user"].c_str(),
+                        row["text"].c_str(),
+                        row["ts"].as<long long>() });
+    return out;
 }
 
 // ===== MESSAGES
