@@ -448,6 +448,15 @@ static long pg_guild_create(const std::string &name, long owner,
   tx.commit();
   return gid;
 }
+
+// Optional: auto-seed a default guild if user has none
+static void pg_guilds_ensure_default_for_user(long uid,
+                                             const std::string &nick) {
+  auto list = pg_guilds_for_user(uid);
+  if (!list.empty())
+    return;
+  (void)pg_guild_create("Default Guild", uid, nick);
+}
 static long pg_channel_create(long gid, std::optional<long> parent,
                               const std::string &kind, const std::string &name,
                               int position, bool is_private = false) {
@@ -818,6 +827,7 @@ void session_loop(tcp::socket socket) {
           sp->send({{"op", "error"}, {"reason", "auth_required"}});
           continue;
         }
+        pg_guilds_ensure_default_for_user(sp->user_id, sp->nick);
         auto list = pg_guilds_for_user(sp->user_id);
         sp->send({{"op", "guilds_list_ok"}, {"guilds", list}});
       } else if (op == "guild_create") {
@@ -1138,6 +1148,7 @@ void session_loop(tcp::socket socket) {
       }
       // -------- UNKNOWN --------
       else {
+        std::cerr << "[" << now_stamp() << "] unknown op: " << op << "\n";
         sp->send({{"op", "error"}, {"reason", "unknown_op"}});
       }
     }
