@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>BCord - Chat</title>
+<title>BCord &mdash; Chat</title>
 <style>
   :root{
     --bg:#0b0f14; --panel:#0f141b; --panel2:#0b1220; --ink:#e5e7eb; --muted:#93a3b8;
@@ -77,10 +78,6 @@
   .users li{cursor:default}
   .users li .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:8px; vertical-align:middle;}
 
-  .chan-actions { float:right; opacity:.75; font-size:12px; }
-  .chan-actions span { margin-left:6px; cursor:pointer; }
-  .chan-actions span:hover { opacity:1; text-decoration:underline; }
-
   /* Chat panel */
   .chatcard{
     min-width:0; display:flex; flex-direction:column; height:72vh;
@@ -132,7 +129,8 @@
         </div>
         <div class="field">
           <label for="loginPass">Password</label>
-          <input id="loginPass" type="password" placeholder="--------">
+          <!-- Using ASCII asterisks in placeholder to avoid encoding issues -->
+          <input id="loginPass" type="password" placeholder="********">
         </div>
       </div>
       <div class="row" style="margin-top:10px">
@@ -167,7 +165,7 @@
         <button id="btnRegister" class="btn primary" type="button">Create account</button>
         <span id="regErr" class="error"></span>
       </div>
-      <p class="note" style="margin-top:6px">After registration you'll be logged in automatically.</p>
+      <p class="note" style="margin-top:6px">After registration you&rsquo;ll be logged in automatically.</p>
     </div>
   </section>
 
@@ -183,7 +181,7 @@
       <aside class="sidebar">
         <div class="side-head">
           <div class="side-title">Channels</div>
-          <div class="side-sub">Subscribed & public</div>
+          <div class="side-sub">Subscribed &amp; public</div>
         </div>
         <ul id="chanList" class="list chans"></ul>
 
@@ -201,10 +199,9 @@
             <strong id="who"></strong> <span id="inRoom"></span>
           </div>
           <div class="rightHead">
-            <!-- ============== YOU MAY EDIT THIS SECTION (UI Buttons) ============== -->
+            <!-- Admin-only (hidden) -->
             <button id="loadOlder" class="btn" type="button" title="Load older messages">Load older</button>
             <button id="exportLog" class="btn" type="button" title="Export transcript">Export</button>
-            <!-- ==================================================================== -->
             <div class="status"><span class="dot" id="dot"></span><span id="connTxt">Disconnected</span></div>
           </div>
         </header>
@@ -326,7 +323,8 @@ const BCordCache = (function(){
 
   return { open, putMany, latest, before, since, newestId, oldestId, exportJSONL };
 })();
-
+</script>
+<script>
 /* =====================================================================================
    ======  SECTION C: APP STATE + RENDERERS (guilds, channels, roster, chat)  =========
    ===================================================================================== */
@@ -337,12 +335,11 @@ let myId = 0;
 let currentGuildId = 0;
 let currentChanId = 0;
 let currentChanName = '';
-let lastChannelsPayload = null;  // remember to refresh positions/parents
 
 function setRoom(id, name){
   currentChanId = id; currentChanName = name || '';
-  $('roomTitle').textContent = id ? `#${name}` : 'Not in a room';
-  $('inRoom').textContent = id ? `in #${name}` : '';
+  $('roomTitle').textContent = id ? '#' + name : 'Not in a room';
+  $('inRoom').textContent = id ? 'in #' + name : '';
   const enable = !!id;
   $('msg').disabled = !enable; $('send').disabled = !enable;
 }
@@ -371,7 +368,7 @@ function renderRoster(users){
   (users||[]).forEach(u=>{
     const li = document.createElement('li');
     li.dataset.uid = u.user_id;
-    li.innerHTML = `<span class="dot"></span>${esc(u.nick || u.user || 'User')}`;
+    li.innerHTML = '<span class="dot"></span>' + esc(u.nick || u.user || 'User');
     ul.appendChild(li);
   });
 }
@@ -380,7 +377,7 @@ function addPresence(u){
   if ([...ul.children].some(li => li.dataset.uid == u.user_id)) return;
   const li = document.createElement('li');
   li.dataset.uid = u.user_id;
-  li.innerHTML = `<span class="dot"></span>${esc(u.nick || u.user || 'User')}`;
+  li.innerHTML = '<span class="dot"></span>' + esc(u.nick || u.user || 'User');
   ul.appendChild(li);
 }
 function removePresence(uid){
@@ -390,94 +387,48 @@ function removePresence(uid){
 }
 
 function renderChannels(payload){
-  lastChannelsPayload = payload;
   const ul = $('chanList'); ul.innerHTML='';
   const cats = payload.categories||[], texts = payload.text||[], voices = payload.voice||[];
 
-  // helper to add a text channel row with actions
-  function addTextRow(ch){
-    const li = document.createElement('li');
-    li.dataset.id = ch.id;
-    li.innerHTML = `#${ch.name} <span class="chan-actions">
-      <span data-act="up">▲</span>
-      <span data-act="down">▼</span>
-      <span data-act="ren">✎</span>
-      <span data-act="del">🗑</span>
-    </span>`;
-    li.onclick = (e)=>{
-      // if clicked on action icons, handle action instead of join
-      const act = e.target?.dataset?.act;
-      if (act) {
-        e.stopPropagation();
-        channelAction(act, ch);
-      } else {
-        joinChannel(ch.id, ch.name);
-      }
-    };
-    ul.appendChild(li);
-  }
-
-  // categories
+  // Categories and their text channels
   cats.forEach(cat=>{
     const h = document.createElement('li');
     h.textContent = '# ' + cat.name;
     h.style.fontWeight='700'; h.style.opacity='.8'; h.style.cursor='default';
     ul.appendChild(h);
-    texts.filter(t=>t.parent_id===cat.id)
-         .sort((a,b)=>a.position-b.position || a.id-b.id)
-         .forEach(addTextRow);
+    texts.filter(t=>t.parent_id===cat.id).forEach(ch=>{
+      const li = document.createElement('li');
+      li.dataset.id = ch.id;
+      li.textContent = '#' + ch.name;
+      li.onclick = ()=> joinChannel(ch.id, ch.name);
+      ul.appendChild(li);
+    });
   });
 
-  // unparented text chans
-  texts.filter(t=>!t.parent_id)
-       .sort((a,b)=>a.position-b.position || a.id-b.id)
-       .forEach(addTextRow);
+  // Unparented text channels
+  texts.filter(t=>!t.parent_id).forEach(ch=>{
+    const li = document.createElement('li');
+    li.dataset.id = ch.id;
+    li.textContent = '#' + ch.name;
+    li.onclick = ()=> joinChannel(ch.id, ch.name);
+    ul.appendChild(li);
+  });
 
-  // voice display
+  // Voice channels (using HTML entities, no emojis)
   if (voices.length){
     const h = document.createElement('li');
-    h.textContent = '🔊 Voice'; h.style.marginTop='8px'; h.style.fontWeight='700';
+    h.innerHTML = '&#128266; Voice'; /* speaker-high */
+    h.style.marginTop='8px'; h.style.fontWeight='700';
     ul.appendChild(h);
     voices.forEach(v=>{
       const li = document.createElement('li');
-      li.textContent = '🔉 ' + v.name;
+      li.innerHTML = '&#128265; ' + esc(v.name); /* speaker-medium */
       ul.appendChild(li);
     });
   }
 }
-
-async function channelAction(act, ch){
-  if (!ws || ws.readyState!==WebSocket.OPEN) return;
-
-  // compute new position when moving
-  function computeNewPosition(delta){
-    // Find siblings = same parent_id
-    const siblings = (lastChannelsPayload.text||[])
-      .filter(t => (t.parent_id||0) === (ch.parent_id||0))
-      .sort((a,b)=>a.position-b.position || a.id-b.id);
-    const idx = siblings.findIndex(t => t.id===ch.id);
-    if (idx < 0) return {parent_id: ch.parent_id||0, position: ch.position};
-    let newIdx = Math.max(0, Math.min(siblings.length-1, idx + delta));
-    if (newIdx === idx) return {parent_id: ch.parent_id||0, position: ch.position};
-    // Assign new position = neighbor's position (+/- n is fine; server stores explicitly)
-    const newPos = siblings[newIdx].position + (delta>0 ? 1 : -1);
-    return {parent_id: ch.parent_id||0, position: newPos};
-  }
-
-  if (act === 'ren') {
-    const name = prompt('Rename channel:', ch.name);
-    if (!name || name.trim()===ch.name) return;
-    ws.send(JSON.stringify({op:'channel_rename', channel_id: ch.id, name: name.trim()}));
-  } else if (act === 'del') {
-    if (!confirm(`Delete #${ch.name}? This cannot be undone.`)) return;
-    ws.send(JSON.stringify({op:'channel_delete', channel_id: ch.id}));
-  } else if (act === 'up' || act === 'down') {
-    const delta = act==='up' ? -1 : +1;
-    const {parent_id, position} = computeNewPosition(delta);
-    ws.send(JSON.stringify({op:'channel_move', channel_id: ch.id, parent_id, position}));
-  }
-}
-
+</script>
+<script>
 /* =====================================================================================
    ==================  SECTION D: WEBSOCKET + HISTORY CONTRACT  ========================
    ===================================================================================== */
@@ -498,7 +449,7 @@ async function handleMessage(m){
   switch(m.op){
     /* ===== AUTH & LOBBY ===== */
     case 'auth_ok': {
-      myId = m.user_id; $('who').textContent = `Signed in as ${m.nick}`;
+      myId = m.user_id; $('who').textContent = 'Signed in as ' + m.nick;
       ws.send(JSON.stringify({op:'guilds_list'}));
       return;
     }
@@ -517,14 +468,6 @@ async function handleMessage(m){
     }
     case 'channels_list_ok': {
       renderChannels(m);
-      return;
-    }
-    case 'channel_updated':
-    case 'channel_deleted':
-    case 'channel_moved': {
-      if (currentGuildId) {
-        ws.send(JSON.stringify({op:'channels_list_guild', guild_id: currentGuildId}));
-      }
       return;
     }
 
@@ -563,7 +506,7 @@ async function handleMessage(m){
       let items = (m.items || []);
 
       const normalized = items.map(it => ({
-        message_id: it.message_id ?? it.id, // accept legacy id too
+        message_id: it.message_id ?? it.id,
         channel_id: cid,
         user_id: it.user_id ?? 0,
         user: it.user ?? it.username,
@@ -606,7 +549,8 @@ async function handleMessage(m){
       return;
   }
 }
-
+</script>
+<script>
 /* =====================================================================================
    =====================  SECTION E: JOIN / SEND / BUTTON WIRING  ======================
    ===================================================================================== */
@@ -634,11 +578,12 @@ $('exportLog')?.addEventListener('click', async ()=>{
   if (!currentChanId) return;
   await BCordCache.exportJSONL(currentChanId);
 });
-
+</script>
+<script>
 /* =====================================================================================
    ==============  SECTION F: AUTH FLOWS (Login/Register/Logout)  ======================
    ===================================================================================== */
-function showApp(){ $('gate').classList.add('hidden'); $('appUI').classList.remove('hidden'); $('who').textContent = `Signed in as ${username || 'User'}`; openSocket(); }
+function showApp(){ $('gate').classList.add('hidden'); $('appUI').classList.remove('hidden'); $('who').textContent = 'Signed in as ' + (username || 'User'); openSocket(); }
 function showGate(){ $('appUI').classList.add('hidden'); $('gate').classList.remove('hidden'); setConn(false); setRoom(0,''); }
 
 $('tabLogin').onclick = ()=>{ $('tabLogin').classList.add('active'); $('tabRegister').classList.remove('active'); $('loginForm').classList.remove('hidden'); $('regForm').classList.add('hidden'); };
@@ -704,7 +649,8 @@ $('logout').onclick = ()=>{
   showGate();
   // NOTE: IndexedDB cache is preserved on purpose
 };
-
+</script>
+<script>
 /* =====================================================================================
    ============================  SECTION G: BOOTSTRAP  =================================
    ===================================================================================== */
