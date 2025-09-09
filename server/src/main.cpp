@@ -54,8 +54,10 @@
 
 #include "lan_mac.hpp"
 #include <argon2.h>
-// put this above the pqxx include:
+// Fix libpqxx ABI mismatch on Ubuntu 24.04 by hiding std::source_location symbols
+#ifndef PQXX_HIDE_SOURCE_LOCATION
 #define PQXX_HIDE_SOURCE_LOCATION
+#endif
 #include <pqxx/pqxx>
 #include <sw/redis++/redis++.h>
 
