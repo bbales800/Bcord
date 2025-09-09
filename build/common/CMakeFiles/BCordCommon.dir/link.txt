@@ -1,0 +1,2 @@
+/usr/bin/ar qc libBCordCommon.a CMakeFiles/BCordCommon.dir/src/dummy.cpp.o
+/usr/bin/ranlib libBCordCommon.a

@@ -1,0 +1,8 @@
+/home/groggywine/BCord/build/CMakeFiles/edit_cache.dir
+/home/groggywine/BCord/build/CMakeFiles/rebuild_cache.dir
+/home/groggywine/BCord/build/common/CMakeFiles/BCordCommon.dir
+/home/groggywine/BCord/build/common/CMakeFiles/edit_cache.dir
+/home/groggywine/BCord/build/common/CMakeFiles/rebuild_cache.dir
+/home/groggywine/BCord/build/server/CMakeFiles/BCordServer.dir
+/home/groggywine/BCord/build/server/CMakeFiles/edit_cache.dir
+/home/groggywine/BCord/build/server/CMakeFiles/rebuild_cache.dir

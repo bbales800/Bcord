@@ -1,0 +1,14 @@
+# build outputs
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+
+# IDE
+.idea/
+.vscode/
+
+# VCS & junk
+.git/
+.gitignore
+.DS_Store

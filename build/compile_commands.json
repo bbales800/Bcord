@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/groggywine/BCord/build/common",
+  "command": "/usr/bin/c++  -I/home/groggywine/BCord/common/include -g -std=gnu++23 -o CMakeFiles/BCordCommon.dir/src/dummy.cpp.o -c /home/groggywine/BCord/common/src/dummy.cpp",
+  "file": "/home/groggywine/BCord/common/src/dummy.cpp"
+},
+{
+  "directory": "/home/groggywine/BCord/build/server",
+  "command": "/usr/bin/c++ -DBOOST_ALL_NO_LIB -DBOOST_ATOMIC_DYN_LINK -DBOOST_SYSTEM_DYN_LINK -DBOOST_THREAD_DYN_LINK -DJSON_DIAGNOSTICS=0 -DJSON_USE_IMPLICIT_CONVERSIONS=1 -I/home/groggywine/BCord/common/include -g -std=gnu++23 -o CMakeFiles/BCordServer.dir/src/main.cpp.o -c /home/groggywine/BCord/server/src/main.cpp",
+  "file": "/home/groggywine/BCord/server/src/main.cpp"
+}
+]

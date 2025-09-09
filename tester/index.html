@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>BCord — Chat</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#0f141b; --panel2:#0b1220; --ink:#e5e7eb; --muted:#93a3b8;
+    --accent:#22d3ee; --accent2:#7c3aed; --ok:#10b981; --err:#ef4444;
+    --radius:16px; --grid:20px;
+  }
+  html,body{height:100%}
+  body{
+    margin:0;color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    background:
+      radial-gradient(1200px 800px at 10% -10%, rgba(124,58,237,.15), transparent 60%),
+      radial-gradient(800px 600px at 110% 0%, rgba(34,211,238,.10), transparent 60%),
+      linear-gradient(transparent calc(var(--grid) - 1px), rgba(255,255,255,.05) 1px),
+      linear-gradient(90deg, transparent calc(var(--grid) - 1px), rgba(255,255,255,.05) 1px),
+      var(--bg);
+    background-size:auto,auto,var(--grid) var(--grid),var(--grid) var(--grid),auto;
+    background-attachment:fixed;
+  }
+  .wrap{max-width:1100px;margin:32px auto;padding:0 18px}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.00));
+        border:1px solid rgba(255,255,255,.08); border-radius:var(--radius); padding:18px;}
+  .title{font-size:13px; font-weight:700; color:#cbd5e1; margin-bottom:10px; letter-spacing:.25px; text-transform:uppercase}
+  .row{display:flex; gap:12px; flex-wrap:wrap}
+  .field{display:flex; flex-direction:column; gap:8px; flex:1}
+  label{font-size:12px; color:#9fb0c8}
+  input,button{ font:inherit; color:var(--ink); }
+  input{
+    background:#0f141b; border:1px solid rgba(255,255,255,.10);
+    padding:12px; border-radius:12px; outline:none;
+  }
+  .btn{
+    background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+    border:1px solid rgba(255,255,255,.12); color:#fff; padding:12px 14px; border-radius:12px;
+    font-weight:700; cursor:pointer;
+  }
+  .btn.primary{
+    background:linear-gradient(180deg, rgba(34,211,238,.18), rgba(124,58,237,.10));
+    border-color:rgba(124,58,237,.35);
+  }
+  .btn.danger{
+    background:linear-gradient(180deg, rgba(239,68,68,.18), rgba(239,68,68,.10));
+    border-color:rgba(239,68,68,.35);
+  }
+  .tabs{display:flex; gap:8px; margin-bottom:14px}
+  .tab{padding:8px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.1); cursor:pointer; color:#cbd5e1}
+  .tab.active{background:rgba(124,58,237,.16); border-color:rgba(124,58,237,.35); color:#fff}
+  .hidden{display:none}
+
+  /* App layout */
+  .app{display:flex; gap:12px}
+  .sidebar{
+    width:280px; background:#0f172a; border:1px solid rgba(255,255,255,.10);
+    border-radius:var(--radius); display:flex; flex-direction:column; height:72vh;
+  }
+  .side-head{padding:12px 14px; border-bottom:1px solid rgba(255,255,255,.1)}
+  .side-title{font-weight:800}
+  .side-sub{font-size:12px; color:#9fb0c8}
+  .list{list-style:none; margin:0; padding:8px; overflow:auto;}
+  .chans li, .users li{padding:6px 10px; border-radius:8px; margin:3px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;}
+  .chans li:hover{background:rgba(255,255,255,.05)}
+  .bubble{float:right; font-size:12px; background:rgba(255,255,255,.06); padding:2px 7px; border-radius:999px; margin-left:8px}
+  .users li .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:8px; vertical-align:middle;}
+
+  .chatcard{
+    flex:1; min-width:0; display:flex; flex-direction:column; height:72vh;
+    background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.00));
+    border:1px solid rgba(255,255,255,.08); border-radius:var(--radius); padding:12px;
+  }
+  header.top{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .status{display:flex; align-items:center; gap:8px; color:#93a3b8; font-size:14px}
+  .dot{width:10px; height:10px; border-radius:999px; background:#ef4444}
+  .dot.on{background:#10b981}
+  .chat{
+    flex:1; overflow:auto; background:#0b1220;
+    border:1px solid rgba(255,255,255,.10); border-radius:var(--radius); padding:16px;
+  }
+  .msg{display:flex; flex-direction:column; gap:6px; padding:10px 12px;
+       background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); border-radius:12px}
+  .meta{display:flex; align-items:baseline; gap:10px}
+  .user{font-weight:700}
+  .time{font-size:12px; color:#9fb0c8}
+  .text{font-size:16px; line-height:1.45}
+  .inputbar{display:flex; gap:10px; margin-top:12px}
+  .inputbar input{flex:1}
+  .note{font-size:12px; color:#9fb0c8}
+  .error{color:#fda4af; font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- AUTH -->
+  <section id="gate" class="card">
+    <div class="title">Access</div>
+    <div class="tabs">
+      <button id="tabLogin" class="tab active" type="button">Login</button>
+      <button id="tabRegister" class="tab" type="button">Register</button>
+    </div>
+
+    <div id="loginForm">
+      <div class="row">
+        <div class="field">
+          <label for="loginIdent">Username or Email</label>
+          <input id="loginIdent" placeholder="Your username / you@example.com">
+        </div>
+        <div class="field">
+          <label for="loginPass">Password</label>
+          <input id="loginPass" type="password" placeholder="••••••••">
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnLogin" class="btn primary" type="button">Login</button>
+        <span id="loginErr" class="error"></span>
+      </div>
+    </div>
+
+    <div id="regForm" class="hidden">
+      <div class="row">
+        <div class="field">
+          <label for="regEmail">Email</label>
+          <input id="regEmail" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="regUser">Username</label>
+          <input id="regUser" placeholder="Your username">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="regPass">Password</label>
+          <input id="regPass" type="password" placeholder="Choose a strong password">
+        </div>
+        <div class="field">
+          <label for="regPass2">Confirm Password</label>
+          <input id="regPass2" type="password" placeholder="Repeat password">
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="btnRegister" class="btn primary" type="button">Create account</button>
+        <span id="regErr" class="error"></span>
+      </div>
+      <p class="note" style="margin-top:6px">After registration you’ll be logged in automatically.</p>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <section id="appUI" class="hidden">
+    <div class="app">
+      <!-- LEFT: channels + roster -->
+      <aside class="sidebar">
+        <div class="side-head">
+          <div class="side-title">Channels</div>
+          <div class="side-sub">Subscribed & public</div>
+        </div>
+        <ul id="chanList" class="list chans"></ul>
+
+        <div class="side-head">
+          <div class="side-title" id="roomTitle">Not in a room</div>
+          <div class="side-sub">Online</div>
+        </div>
+        <ul id="userList" class="list users"></ul>
+      </aside>
+
+      <!-- RIGHT: chat -->
+      <div class="chatcard">
+        <header class="top">
+          <div><strong id="who"></strong> <span id="inRoom"></span></div>
+          <div class="status"><span class="dot" id="dot"></span><span id="connTxt">Disconnected</span></div>
+        </header>
+
+        <div id="chat" class="chat" aria-label="Messages"></div>
+
+        <div class="inputbar">
+          <input id="msg" placeholder="Type a message and press Enter" disabled>
+          <button id="send" class="btn" type="button" disabled>Send</button>
+          <button id="logout" class="btn danger" type="button">Logout</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // ---------- utils ----------
+  const $ = id => document.getElementById(id);
+  const esc = s => s.replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const fmtTime = ts => { const d = ts? new Date(ts*1000) : new Date(); return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); };
+  const wsURL = () => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+
+  // ---------- state ----------
+  let ws=null, pingTimer=null;
+  let token = localStorage.getItem('bcord_token') || '';
+  let username = localStorage.getItem('bcord_username') || '';
+  let myId = 0;
+  let currentChanId = 0;
+  let currentChanName = '';
+
+  // ---------- UI helpers ----------
+  function setConn(on){ $('connTxt').textContent = on ? 'Connected' : 'Disconnected'; $('dot').classList.toggle('on', on); }
+  function setRoom(id, name){
+    currentChanId = id; currentChanName = name || '';
+    $('roomTitle').textContent = id ? `#${name}` : 'Not in a room';
+    $('inRoom').textContent = id ? `in #${name}` : '';
+    const enable = !!id;
+    $('msg').disabled = !enable; $('send').disabled = !enable;
+  }
+  function addMsg(user, text, ts){
+    const wrap = document.createElement('div'); wrap.className='msg';
+    const meta = document.createElement('div'); meta.className='meta';
+    const u = document.createElement('span'); u.className='user'; u.textContent = user || 'anon';
+    const t = document.createElement('span'); t.className='time'; t.textContent = fmtTime(ts);
+    meta.append(u,t);
+    const body = document.createElement('div'); body.className='text'; body.textContent = text;
+    wrap.append(meta, body);
+    $('chat').appendChild(wrap);
+    $('chat').scrollTop = $('chat').scrollHeight;
+  }
+
+  // ---------- presence (roster) ----------
+  function renderRoster(users){
+    const ul = $('userList'); ul.innerHTML='';
+    (users||[]).forEach(u=>{
+      const li = document.createElement('li');
+      li.dataset.uid = u.user_id;
+      li.innerHTML = `<span class="dot"></span>${esc(u.nick)}`;
+      ul.appendChild(li);
+    });
+  }
+  function addPresence(u){
+    const ul = $('userList');
+    if ([...ul.children].some(li => li.dataset.uid == u.user_id)) return;
+    const li = document.createElement('li');
+    li.dataset.uid = u.user_id;
+    li.innerHTML = `<span class="dot"></span>${esc(u.nick)}`;
+    ul.appendChild(li);
+  }
+  function removePresence(uid){
+    const ul = $('userList');
+    const li = [...ul.children].find(li => li.dataset.uid == uid);
+    if (li) li.remove();
+  }
+
+  // ---------- channels ----------
+  function renderChannels(chans){
+    const ul = $('chanList'); ul.innerHTML='';
+    chans.forEach(c=>{
+      const li = document.createElement('li');
+      li.dataset.id = c.id;
+      li.innerHTML = `#${esc(c.name)} <span class="bubble">${(c.online_count>=0)? c.online_count : '—'}</span>`;
+      li.onclick = ()=>joinChannel(c.id, c.name);
+      ul.appendChild(li);
+    });
+  }
+
+  // ---------- socket ----------
+  function openSocket(){
+    if (ws && (ws.readyState===WebSocket.OPEN || ws.readyState===WebSocket.CONNECTING)) return;
+    ws = new WebSocket(wsURL());
+    ws.onopen = ()=>{
+      setConn(true);
+      if (token) ws.send(JSON.stringify({op:'auth', token}));
+      clearInterval(pingTimer);
+      pingTimer = setInterval(()=>{ try{ ws.send(JSON.stringify({op:'ping'})); }catch{} }, 30000);
+    };
+    ws.onmessage = (ev)=>{
+      let m; try{ m=JSON.parse(ev.data); }catch{ return; }
+
+      // fast path: live messages only for current channel
+      if (m.op==='message') {
+        if (!currentChanId || (m.channel_id && m.channel_id!==currentChanId)) return;
+        addMsg(m.user, m.text, m.ts);
+        return;
+      }
+
+      switch(m.op){
+        case 'auth_ok':
+          myId = m.user_id; $('who').textContent = `Signed in as ${m.nick}`;
+          ws.send(JSON.stringify({op:'channels_list'}));
+          return;
+
+        case 'channels_list_ok':
+          renderChannels(m.channels || []);
+          return;
+
+        case 'joined_ok':
+          setRoom(m.channel_id, m.name || 'general');
+          renderRoster(m.users || []);
+          $('chat').innerHTML = '';
+          ws.send(JSON.stringify({op:'history', channel_id: m.channel_id, limit: 100}));
+          return;
+
+        case 'presence_list_ok':
+          if (m.channel_id === currentChanId) renderRoster(m.users || []);
+          return;
+
+        case 'joined':
+          if (m.channel_id===currentChanId) addPresence({user_id:m.user_id, nick:m.user || m.nick || 'User'});
+          return;
+
+        case 'left':
+          if (m.channel_id===currentChanId) removePresence(m.user_id);
+          return;
+
+        case 'history_ok':
+          if (m.channel_id!==currentChanId) return;
+          const items = (m.items||[]).slice().reverse();
+          $('chat').innerHTML='';
+          for (const it of items) addMsg(it.username||it.user, it.body||it.text, it.ts);
+          return;
+
+        case 'login_ok': // handled in login shim
+        case 'register_ok':
+        case 'pong':
+          return;
+
+        case 'error':
+          // optional toast
+          return;
+      }
+    };
+    ws.onclose = ()=>{ setConn(false); clearInterval(pingTimer); pingTimer=null; setRoom(0,''); };
+  }
+
+  function joinChannel(id, name){
+    if (!ws || ws.readyState!==WebSocket.OPEN) return;
+    if (id===currentChanId) return;
+    ws.send(JSON.stringify({op:'join', channel_id:id}));
+  }
+
+  // ---------- auth UI ----------
+  function showApp(){ $('gate').classList.add('hidden'); $('appUI').classList.remove('hidden'); $('who').textContent = `Signed in as ${username||'User'}`; openSocket(); }
+  function showGate(){ $('appUI').classList.add('hidden'); $('gate').classList.remove('hidden'); setConn(false); setRoom(0,''); }
+
+  $('tabLogin').onclick = ()=>{ $('tabLogin').classList.add('active'); $('tabRegister').classList.remove('active'); $('loginForm').classList.remove('hidden'); $('regForm').classList.add('hidden'); };
+  $('tabRegister').onclick = ()=>{ $('tabRegister').classList.add('active'); $('tabLogin').classList.remove('active'); $('regForm').classList.remove('hidden'); $('loginForm').classList.add('hidden'); };
+
+  $('btnLogin').onclick = ()=>{
+    $('loginErr').textContent='';
+    const ident=$('loginIdent').value.trim(), pass=$('loginPass').value;
+    if(!ident||!pass){ $('loginErr').textContent='Enter username/email and password.'; return; }
+    openSocket();
+    const send = ()=>{ if(ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({op:'login', id:ident, password:pass})); else setTimeout(send,100); };
+    send();
+    const old = ws.onmessage;
+    ws.onmessage = (ev)=>{
+      let m; try{ m=JSON.parse(ev.data);}catch{ return; }
+      if(m.op==='login_ok' && m.token){
+        token=m.token; username=m.nick||ident;
+        localStorage.setItem('bcord_token',token);
+        localStorage.setItem('bcord_username',username);
+        ws.send(JSON.stringify({op:'auth', token}));
+        $('loginErr').textContent=''; showApp();
+        ws.onmessage = old; ws.onmessage(ev);
+        return;
+      }
+      if(m.op==='error'){ $('loginErr').textContent='Login failed.'; return; }
+      old(ev);
+    };
+  };
+
+  $('btnRegister').onclick = ()=>{
+    $('regErr').textContent='';
+    const email=$('regEmail').value.trim(), user=$('regUser').value.trim();
+    const p1=$('regPass').value, p2=$('regPass2').value;
+    if(!email||!user||!p1){ $('regErr').textContent='Fill all fields.'; return; }
+    if(p1!==p2){ $('regErr').textContent='Passwords do not match.'; return; }
+    openSocket();
+    const send = ()=>{ if(ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({op:'register', email, username:user, password:p1})); else setTimeout(send,100); };
+    send();
+    const old = ws.onmessage;
+    ws.onmessage = (ev)=>{
+      let m; try{ m=JSON.parse(ev.data);}catch{ return; }
+      if(m.op==='register_ok' && m.token){
+        token=m.token; username=m.nick||user;
+        localStorage.setItem('bcord_token',token);
+        localStorage.setItem('bcord_username',username);
+        ws.send(JSON.stringify({op:'auth', token}));
+        $('regErr').textContent=''; showApp();
+        ws.onmessage = old; ws.onmessage(ev);
+        return;
+      }
+      if(m.op==='error'){ $('regErr').textContent='Registration failed.'; return; }
+      old(ev);
+    };
+  };
+
+  // send chat
+  $('send').onclick = ()=>{
+    if(!ws || ws.readyState!==WebSocket.OPEN || !currentChanId) return;
+    const text=$('msg').value.trim(); if(!text) return;
+    ws.send(JSON.stringify({op:'msg', channel_id: currentChanId, text}));
+    $('msg').value='';
+  };
+  $('msg').addEventListener('keypress', e=>{ if(e.key==='Enter') $('send').click(); });
+
+  // logout
+  $('logout').onclick = ()=>{
+    try{ ws && ws.close(); }catch{}
+    localStorage.removeItem('bcord_token'); localStorage.removeItem('bcord_username');
+    token=''; username=''; $('chat').innerHTML=''; renderRoster([]); renderChannels([]); showGate();
+  };
+
+  // boot
+  if (token) { username = username || 'User'; showApp(); } else { showGate(); }
+</script>
+</body>
+</html>
