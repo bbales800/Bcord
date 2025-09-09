@@ -1,5 +1,5 @@
 // =====================================================================================
-// BCORD SERVER (Boost.Beast WebSocket) — Durable History by channel_id + Presence
+// BCORD SERVER (Boost.Beast WebSocket) - Durable History by channel_id + Presence
 // =====================================================================================
 //
 // WHAT THIS FILE DOES (clean version):
@@ -20,7 +20,7 @@
 // =====================================================================================
 
 // =====================================================================================
-// BCORD SERVER (Boost.Beast WebSocket) — Durable History by channel_id + Guilds/Channels
+// BCORD SERVER (Boost.Beast WebSocket) - Durable History by channel_id + Guilds/Channels
 // =====================================================================================
 
 #include <boost/beast/core.hpp>
@@ -44,6 +44,7 @@
 #include <vector>
 #include <array>
 #include <optional>
+#include <tuple>
 #include <sstream>
 #include <iterator>
 #include <algorithm>
@@ -142,7 +143,7 @@ static void pg_init_auth_schema() {
 static void pg_init_channel_schema() {
     if (!g_pg.enabled) return;
 
-    // Existing prepares you may already have for channel auth — keep as needed.
+    // Existing prepares you may already have for channel auth - keep as needed.
     g_pg.conn->prepare("channel_is_joinable", "SELECT true AS ok"); // allow all for now
     g_pg.conn->prepare("channel_name_by_id",  "SELECT name FROM channels WHERE id=$1");
     g_pg.conn->prepare("channel_id_by_name",  "SELECT id FROM channels WHERE name=$1");
@@ -171,6 +172,24 @@ static void pg_init_channel_schema() {
     g_pg.conn->prepare("channel_insert",
       "INSERT INTO channels(guild_id,parent_id,kind,name,position,is_private) "
       "VALUES($1, NULLIF($2,0), $3::channel_kind, $4, $5, $6) RETURNING id");
+
+    // --- PHASE 2 prepares: channel info / rename / delete / move ---
+    g_pg.conn->prepare("channel_info",
+      "SELECT guild_id, parent_id, kind::text AS kind, is_private FROM channels WHERE id=$1");
+
+    g_pg.conn->prepare("channel_update_name",
+      "UPDATE channels SET name=$2 WHERE id=$1 RETURNING id, name");
+
+    g_pg.conn->prepare("channel_delete",
+      "DELETE FROM channels WHERE id=$1");
+
+    g_pg.conn->prepare("channel_move",
+      "UPDATE channels SET parent_id = NULLIF($2,0), position=$3 WHERE id=$1 RETURNING id, parent_id, position");
+
+    // Joinability: allowed if channel is NOT private or user has membership
+    g_pg.conn->prepare("channel_joinable_check",
+      "SELECT (NOT c.is_private) OR EXISTS (SELECT 1 FROM channel_memberships m WHERE m.channel_id=c.id AND m.user_id=$2) AS ok "
+      "FROM channels c WHERE c.id=$1");
 }
 
 static void pg_init_msg_schema() {
@@ -250,9 +269,53 @@ static void pg_subscribe(long chan_id,long uid,bool on){
     else    tx.exec_prepared("unsubscribe_update",chan_id,uid);
     tx.commit();
 }
-static bool pg_channel_is_joinable(long chan_id,long /*uid*/){
-    pqxx::work tx{*g_pg.conn}; auto r=tx.exec_prepared("channel_is_joinable"); // allow all now
+static bool pg_channel_is_joinable(long chan_id,long uid){
+    pqxx::work tx{*g_pg.conn};
+    auto r = tx.exec_prepared("channel_joinable_check", chan_id, uid);
     return !r.empty() && r[0]["ok"].as<bool>();
+}
+
+// --- PHASE 2 helpers: rename / delete / move --------------------------------
+static std::optional<std::tuple<long,long,std::string,bool>>
+pg_channel_fetch_info(long cid) {
+    pqxx::work tx{*g_pg.conn};
+    auto r = tx.exec_prepared("channel_info", cid);
+    if (r.empty()) return std::nullopt;
+    long gid = r[0]["guild_id"].is_null()? 0 : r[0]["guild_id"].as<long>();
+    long parent = r[0]["parent_id"].is_null()? 0 : r[0]["parent_id"].as<long>();
+    std::string kind = r[0]["kind"].c_str();
+    bool priv = r[0]["is_private"].as<bool>();
+    tx.commit();
+    return std::make_tuple(gid,parent,kind,priv);
+}
+
+static std::optional<std::pair<long,std::string>>
+pg_channel_rename(long cid, const std::string& name) {
+    pqxx::work tx{*g_pg.conn};
+    auto r = tx.exec_prepared("channel_update_name", cid, name);
+    if (r.empty()) return std::nullopt;
+    auto out = std::make_pair(r[0]["id"].as<long>(), r[0]["name"].c_str());
+    tx.commit();
+    return out;
+}
+
+static bool pg_channel_delete(long cid) {
+    pqxx::work tx{*g_pg.conn};
+    tx.exec_prepared("channel_delete", cid);
+    tx.commit();
+    return true;
+}
+
+static std::optional<std::tuple<long,long,int>>
+pg_channel_move(long cid, std::optional<long> parent, int position) {
+    pqxx::work tx{*g_pg.conn};
+    auto r = tx.exec_prepared("channel_move", cid, parent? *parent : 0, position);
+    if (r.empty()) return std::nullopt;
+    long pid = r[0]["parent_id"].is_null()? 0 : r[0]["parent_id"].as<long>();
+    int pos = r[0]["position"].as<int>();
+    auto out = std::make_tuple(r[0]["id"].as<long>(), pid, pos);
+    tx.commit();
+    return out;
 }
 
 // ===== GUILDS/CHANNELS HELPERS =======================================================
@@ -539,6 +602,44 @@ void session_loop(tcp::socket socket) {
                 sp->send({{"op","channel_created"},
                           {"id",cid},{"guild_id",gid},{"parent_id", parent ? *parent : 0},
                           {"kind",kind},{"name",name},{"position",position}});
+            }
+            // ---- CHANNEL: rename -------------------------------------------------------
+            else if (op == "channel_rename") {
+                if (!sp->authenticated) { sp->send({{"op","error"},{"reason","auth_required"}}); continue; }
+                long cid = in.value("channel_id", 0L);
+                std::string name = in.value("name", "");
+                if (!cid || name.empty()) { sp->send({{"op","error"},{"reason","missing_fields"}}); continue; }
+
+                // (Optional) check: user must be guild member â€” we skip advanced perms for now
+
+                auto res = pg_channel_rename(cid, name);
+                if (!res) { sp->send({{"op","error"},{"reason","rename_failed"}}); continue; }
+                sp->send({{"op","channel_updated"},{"id", res->first},{"name", res->second}});
+            }
+            // ---- CHANNEL: delete -------------------------------------------------------
+            else if (op == "channel_delete") {
+                if (!sp->authenticated) { sp->send({{"op","error"},{"reason","auth_required"}}); continue; }
+                long cid = in.value("channel_id", 0L);
+                if (!cid) { sp->send({{"op","error"},{"reason","bad_channel"}}); continue; }
+
+                // (Optional) check: user must be guild admin â€” skipped for now
+
+                if (!pg_channel_delete(cid)) { sp->send({{"op","error"},{"reason","delete_failed"}}); continue; }
+                sp->send({{"op","channel_deleted"},{"id", cid}});
+            }
+            // ---- CHANNEL: move/reorder -------------------------------------------------
+            else if (op == "channel_move") {
+                if (!sp->authenticated) { sp->send({{"op","error"},{"reason","auth_required"}}); continue; }
+                long cid = in.value("channel_id", 0L);
+                int  position = in.value("position", 0);
+                std::optional<long> parent;
+                if (in.contains("parent_id")) parent = in["parent_id"].get<long>();
+                if (!cid) { sp->send({{"op","error"},{"reason","bad_channel"}}); continue; }
+
+                auto res = pg_channel_move(cid, parent, position);
+                if (!res) { sp->send({{"op","error"},{"reason","move_failed"}}); continue; }
+                auto [id, pid, pos] = *res;
+                sp->send({{"op","channel_moved"},{"id", id},{"parent_id", pid},{"position", pos}});
             }
             // -------- JOIN / LEAVE --------
             else if (op == "join") {

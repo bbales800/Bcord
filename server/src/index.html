@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>BCord — Chat</title>
+<title>BCord - Chat</title>
 <style>
   :root{
     --bg:#0b0f14; --panel:#0f141b; --panel2:#0b1220; --ink:#e5e7eb; --muted:#93a3b8;
@@ -77,6 +77,10 @@
   .users li{cursor:default}
   .users li .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; margin-right:8px; vertical-align:middle;}
 
+  .chan-actions { float:right; opacity:.75; font-size:12px; }
+  .chan-actions span { margin-left:6px; cursor:pointer; }
+  .chan-actions span:hover { opacity:1; text-decoration:underline; }
+
   /* Chat panel */
   .chatcard{
     min-width:0; display:flex; flex-direction:column; height:72vh;
@@ -128,7 +132,7 @@
         </div>
         <div class="field">
           <label for="loginPass">Password</label>
-          <input id="loginPass" type="password" placeholder="••••••••">
+          <input id="loginPass" type="password" placeholder="--------">
         </div>
       </div>
       <div class="row" style="margin-top:10px">
@@ -163,7 +167,7 @@
         <button id="btnRegister" class="btn primary" type="button">Create account</button>
         <span id="regErr" class="error"></span>
       </div>
-      <p class="note" style="margin-top:6px">After registration you’ll be logged in automatically.</p>
+      <p class="note" style="margin-top:6px">After registration you'll be logged in automatically.</p>
     </div>
   </section>
 
@@ -333,6 +337,7 @@ let myId = 0;
 let currentGuildId = 0;
 let currentChanId = 0;
 let currentChanName = '';
+let lastChannelsPayload = null;  // remember to refresh positions/parents
 
 function setRoom(id, name){
   currentChanId = id; currentChanName = name || '';
@@ -385,40 +390,91 @@ function removePresence(uid){
 }
 
 function renderChannels(payload){
+  lastChannelsPayload = payload;
   const ul = $('chanList'); ul.innerHTML='';
   const cats = payload.categories||[], texts = payload.text||[], voices = payload.voice||[];
 
-  // Categories and their text channels
+  // helper to add a text channel row with actions
+  function addTextRow(ch){
+    const li = document.createElement('li');
+    li.dataset.id = ch.id;
+    li.innerHTML = `#${ch.name} <span class="chan-actions">
+      <span data-act="up">â–²</span>
+      <span data-act="down">â–¼</span>
+      <span data-act="ren">âœŽ</span>
+      <span data-act="del">ðŸ—‘</span>
+    </span>`;
+    li.onclick = (e)=>{
+      // if clicked on action icons, handle action instead of join
+      const act = e.target?.dataset?.act;
+      if (act) {
+        e.stopPropagation();
+        channelAction(act, ch);
+      } else {
+        joinChannel(ch.id, ch.name);
+      }
+    };
+    ul.appendChild(li);
+  }
+
+  // categories
   cats.forEach(cat=>{
     const h = document.createElement('li');
     h.textContent = '# ' + cat.name;
     h.style.fontWeight='700'; h.style.opacity='.8'; h.style.cursor='default';
     ul.appendChild(h);
-    texts.filter(t=>t.parent_id===cat.id).forEach(ch=>{
-      const li = document.createElement('li');
-      li.dataset.id = ch.id;
-      li.textContent = '#' + ch.name;
-      li.onclick = ()=> joinChannel(ch.id, ch.name);
-      ul.appendChild(li);
-    });
+    texts.filter(t=>t.parent_id===cat.id)
+         .sort((a,b)=>a.position-b.position || a.id-b.id)
+         .forEach(addTextRow);
   });
-  // Unparented text chans
-  texts.filter(t=>!t.parent_id).forEach(ch=>{
-    const li = document.createElement('li');
-    li.dataset.id = ch.id; li.textContent = '#' + ch.name;
-    li.onclick = ()=> joinChannel(ch.id, ch.name);
-    ul.appendChild(li);
-  });
-  // Voice (display only for now)
+
+  // unparented text chans
+  texts.filter(t=>!t.parent_id)
+       .sort((a,b)=>a.position-b.position || a.id-b.id)
+       .forEach(addTextRow);
+
+  // voice display
   if (voices.length){
     const h = document.createElement('li');
-    h.textContent = '?? Voice'; h.style.marginTop='8px'; h.style.fontWeight='700';
+    h.textContent = 'ðŸ”Š Voice'; h.style.marginTop='8px'; h.style.fontWeight='700';
     ul.appendChild(h);
     voices.forEach(v=>{
       const li = document.createElement('li');
-      li.textContent = '?? ' + v.name;
+      li.textContent = 'ðŸ”‰ ' + v.name;
       ul.appendChild(li);
     });
+  }
+}
+
+async function channelAction(act, ch){
+  if (!ws || ws.readyState!==WebSocket.OPEN) return;
+
+  // compute new position when moving
+  function computeNewPosition(delta){
+    // Find siblings = same parent_id
+    const siblings = (lastChannelsPayload.text||[])
+      .filter(t => (t.parent_id||0) === (ch.parent_id||0))
+      .sort((a,b)=>a.position-b.position || a.id-b.id);
+    const idx = siblings.findIndex(t => t.id===ch.id);
+    if (idx < 0) return {parent_id: ch.parent_id||0, position: ch.position};
+    let newIdx = Math.max(0, Math.min(siblings.length-1, idx + delta));
+    if (newIdx === idx) return {parent_id: ch.parent_id||0, position: ch.position};
+    // Assign new position = neighbor's position (+/- n is fine; server stores explicitly)
+    const newPos = siblings[newIdx].position + (delta>0 ? 1 : -1);
+    return {parent_id: ch.parent_id||0, position: newPos};
+  }
+
+  if (act === 'ren') {
+    const name = prompt('Rename channel:', ch.name);
+    if (!name || name.trim()===ch.name) return;
+    ws.send(JSON.stringify({op:'channel_rename', channel_id: ch.id, name: name.trim()}));
+  } else if (act === 'del') {
+    if (!confirm(`Delete #${ch.name}? This cannot be undone.`)) return;
+    ws.send(JSON.stringify({op:'channel_delete', channel_id: ch.id}));
+  } else if (act === 'up' || act === 'down') {
+    const delta = act==='up' ? -1 : +1;
+    const {parent_id, position} = computeNewPosition(delta);
+    ws.send(JSON.stringify({op:'channel_move', channel_id: ch.id, parent_id, position}));
   }
 }
 
@@ -461,6 +517,14 @@ async function handleMessage(m){
     }
     case 'channels_list_ok': {
       renderChannels(m);
+      return;
+    }
+    case 'channel_updated':
+    case 'channel_deleted':
+    case 'channel_moved': {
+      if (currentGuildId) {
+        ws.send(JSON.stringify({op:'channels_list_guild', guild_id: currentGuildId}));
+      }
       return;
     }
 
