@@ -1150,8 +1150,8 @@ void session_loop(tcp::socket socket) {
       }
       // -------- UNKNOWN --------
       else {
-        std::cerr << "[" << now_stamp() << "] unknown op: " << op << "\n";
-        sp->send({{"op", "error"}, {"reason", "unknown_op"}});
+        std::cerr << "[op] unknown: " << op << "\n";
+        sp->send({{"op","error"},{"reason","unknown_op"}});
       }
     }
   } catch (const beast::system_error &se) {

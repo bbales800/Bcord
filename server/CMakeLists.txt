@@ -8,7 +8,7 @@ add_executable(BCordServer
         src/main.cpp
 )
 
-# Prevent libpqxx linking against std::source_location in our objects
+# Ensure libpqxx does not drag std::source_location into our TU symbols
 target_compile_definitions(BCordServer PRIVATE PQXX_HIDE_SOURCE_LOCATION)
 
 if (redis++_FOUND)
