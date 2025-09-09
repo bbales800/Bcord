@@ -12,7 +12,8 @@ RUN apt-get update && \
       libssl-dev \
       libpq-dev \
       libboost-dev libboost-system-dev libboost-thread-dev \
-      libhiredis-dev && \
+      libhiredis-dev \
+      nlohmann-json3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # ---- Build redis-plus-plus (headers+libs into /usr/local) ------------------
