@@ -10,7 +10,7 @@ RUN apt-get update && \
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       build-essential cmake ninja-build git wget \
-      libboost-all-dev libpqxx-dev nlohmann-json3-dev \
+      libboost-all-dev nlohmann-json3-dev \
       redis-server libhiredis-dev libargon2-dev && \
     rm -rf /var/lib/apt/lists/*
 
@@ -37,6 +37,12 @@ RUN git clone --depth 1 https://github.com/sewenew/redis-plus-plus.git /tmp/redi
     cmake --install /tmp/redis-plus-plus/build && \
     ldconfig && \
     rm -rf /tmp/redis-plus-plus
+
+# --- Build libpqxx from source so headers and library match ---
+RUN git clone --depth 1 https://github.com/jtv/libpqxx.git /tmp/libpqxx \
+ && cmake -S /tmp/libpqxx -B /tmp/libpqxx/build -DCMAKE_BUILD_TYPE=Release \
+ && cmake --build /tmp/libpqxx/build -j \
+ && cmake --install /tmp/libpqxx/build
 
 # ---- your app ----
 WORKDIR /app

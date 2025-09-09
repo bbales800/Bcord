@@ -1,6 +1,6 @@
 BEGIN;
 
--- Enum for channels.kind
+-- 1) Enum for channels.kind
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname='channel_kind') THEN
@@ -8,7 +8,7 @@ BEGIN
   END IF;
 END $$;
 
--- Guilds + members
+-- 2) guilds / guild_members
 CREATE TABLE IF NOT EXISTS guilds (
   id          BIGSERIAL PRIMARY KEY,
   name        TEXT NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS guild_members (
   PRIMARY KEY (guild_id, user_id)
 );
 
--- Alter legacy channels in-place (add cols if missing)
+-- 3) Alter legacy channels in-place
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='channels' AND column_name='guild_id') THEN
@@ -43,30 +43,36 @@ BEGIN
   END IF;
 END $$;
 
--- Default guild & membership for backfill
-WITH owner AS (
-  SELECT id, username FROM users ORDER BY id LIMIT 1
-), g AS (
-  INSERT INTO guilds(name, created_by)
-  SELECT 'Default Guild', id FROM owner
-  ON CONFLICT DO NOTHING
-  RETURNING id, created_by
-)
-INSERT INTO guild_members(guild_id, user_id, nick)
-SELECT (SELECT id FROM guilds WHERE name='Default Guild' ORDER BY id LIMIT 1), id, username
-FROM owner
-ON CONFLICT DO NOTHING;
+-- 4) Create default guild only if there is at least one user
+DO $$
+DECLARE u_id BIGINT;
+BEGIN
+  SELECT id INTO u_id FROM users ORDER BY id LIMIT 1;
+  IF u_id IS NOT NULL THEN
+    -- ensure the guild exists
+    INSERT INTO guilds(name, created_by)
+    VALUES ('Default Guild', u_id)
+    ON CONFLICT DO NOTHING;
 
--- Backfill existing channels
-UPDATE channels
-SET guild_id = (SELECT id FROM guilds WHERE name='Default Guild' ORDER BY id LIMIT 1)
-WHERE guild_id IS NULL;
+    -- ensure the owner is member
+    INSERT INTO guild_members(guild_id, user_id, nick)
+    SELECT g.id, u_id, COALESCE(u.username, 'owner')
+    FROM guilds g
+    LEFT JOIN users u ON u.id = u_id
+    WHERE g.name = 'Default Guild'
+    ON CONFLICT DO NOTHING;
 
-UPDATE channels
-SET kind = 'text'
-WHERE kind IS NULL;
+    -- backfill existing channels lacking guild_id
+    UPDATE channels
+    SET guild_id = (SELECT id FROM guilds WHERE name='Default Guild' ORDER BY id LIMIT 1)
+    WHERE guild_id IS NULL;
 
--- FK + index
+    -- default kind = text where missing
+    UPDATE channels SET kind='text' WHERE kind IS NULL;
+  END IF;
+END $$;
+
+-- 5) FK/index
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_channels_guild') THEN
