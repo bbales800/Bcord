@@ -8,6 +8,9 @@ add_executable(BCordServer
         src/main.cpp
 )
 
+# Prevent libpqxx linking against std::source_location in our objects
+target_compile_definitions(BCordServer PRIVATE PQXX_HIDE_SOURCE_LOCATION)
+
 if (redis++_FOUND)
     target_link_libraries(BCordServer PRIVATE
             Boost::system
